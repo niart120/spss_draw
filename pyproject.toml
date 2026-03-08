@@ -1,0 +1,17 @@
+[project]
+name = "spss-draw"
+version = "0.2.0"
+description = "SPSS (Simple Perfect Squared Square) visualizer & 3D model generator"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "build123d>=0.8",
+    "matplotlib>=3.10.8",
+]
+
+[project.optional-dependencies]
+cad = ["build123d>=0.8"]
+
+[project.scripts]
+spss-draw = "spss_draw.cli:main_2d"
+spss-3d = "spss_draw.cli:main_3d"
