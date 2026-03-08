@@ -1,8 +1,9 @@
 """build123d-based 3D skeleton model generation for SPSS tilings.
 
-The skeleton is constructed by extruding the full square as a solid block and
-then subtracting the interior of every tile, leaving only the wall edges as a
-wireframe-like structure.
+The skeleton is built additively: each tile contributes a solid block that
+extends ``wall_thickness / 2`` beyond its boundary on every side, then the
+interior of each tile is subtracted.  Boolean union naturally gives shared
+walls the height of the *taller* neighbour.
 """
 
 from __future__ import annotations
@@ -53,58 +54,52 @@ def build_skeleton(
     -------
     A build123d ``Part`` ready for export.
     """
-    from build123d import Box, BuildPart, Locations, Mode
+    from build123d import Align, Box, BuildPart, Locations, Mode
 
     S = size * scale
-    # Make the outer box slightly larger so outer walls equal wall_thickness.
-    outer = S + wall_thickness
+    half_S = S / 2
 
-    # When height_multiplier is active the outer block must be tall enough
-    # to cover the tallest tile wall.
-    max_side = max(s for _, _, s in tiles)
-    max_height = (
-        height + max_side * scale * height_multiplier
-        if height_multiplier > 0
-        else height
-    )
+    def _tile_h(s: int) -> float:
+        if height_multiplier > 0:
+            return height + s * scale * height_multiplier
+        return height
+
+    # Z-align: bottom face sits at the Locations z-coordinate.
+    Z_ALIGN = (Align.CENTER, Align.CENTER, Align.MIN)
 
     with BuildPart() as part:
-        # Solid block tall enough for the tallest wall
-        Box(outer, outer, max_height)
-
+        # ── Phase 1: Add per-tile solid blocks ───────────────────────
+        # Each block is (s*scale + wt) wide, extending wt/2 beyond the
+        # tile boundary on every side.  For internal edges both tiles
+        # contribute wt/2 each → total wall = wt.  For outer edges the
+        # block extends wt/2 outside the nominal square.
+        # Where two tiles share an edge the taller block governs the
+        # shared-wall height via boolean union.
         for x, y, s in tiles:
-            cut_side = s * scale - wall_thickness
-            if cut_side <= 0:
-                continue
+            th = _tile_h(s)
+            full = s * scale + wall_thickness
+            cx = (x + s / 2) * scale - half_S
+            cy = (y + s / 2) * scale - half_S
+            with Locations([(cx, cy, 0)]):
+                Box(full, full, th, align=Z_ALIGN)
 
-            # Per-tile wall height when multiplier is active
-            tile_height = (
-                height + s * scale * height_multiplier
-                if height_multiplier > 0
-                else height
-            )
+        # ── Phase 2: Hollow tile interiors ───────────────────────────
+        for x, y, s in tiles:
+            th = _tile_h(s)
+            cut = s * scale - wall_thickness
+            if cut <= 0:
+                continue  # tile too small to hollow
+            cx = (x + s / 2) * scale - half_S
+            cy = (y + s / 2) * scale - half_S
 
-            # Tile centre relative to model origin
-            cx = (x + s / 2) * scale - S / 2
-            cy = (y + s / 2) * scale - S / 2
-
-            # Cut away everything above this tile's wall height first
-            if height_multiplier > 0 and tile_height < max_height:
-                trim_h = max_height - tile_height
-                trim_z = tile_height + trim_h / 2
-                with Locations([(cx, cy, trim_z)]):
-                    Box(cut_side + wall_thickness, cut_side + wall_thickness,
-                        trim_h + 0.02, mode=Mode.SUBTRACT)
-
-            if 0 < base_thickness < tile_height:
-                cut_h = tile_height - base_thickness
-                cz = base_thickness / 2
+            if 0 < base_thickness < th:
+                with Locations([(cx, cy, base_thickness)]):
+                    Box(cut, cut, th - base_thickness + 0.01,
+                        align=Z_ALIGN, mode=Mode.SUBTRACT)
             else:
-                cut_h = tile_height + 0.02  # ensure clean through-cut
-                cz = 0.0
-
-            with Locations([(cx, cy, cz)]):
-                Box(cut_side, cut_side, cut_h, mode=Mode.SUBTRACT)
+                with Locations([(cx, cy, -0.01)]):
+                    Box(cut, cut, th + 0.02,
+                        align=Z_ALIGN, mode=Mode.SUBTRACT)
 
     return part.part
 
