@@ -20,7 +20,7 @@ def build_skeleton(
     *,
     scale: float = 0.5,
     wall_thickness: float = 1.0,
-    height: float = 5.0,
+    height: float = 1.0,
     height_multiplier: float = 0.0,
     base_thickness: float = 0.0,
 ) -> Part:

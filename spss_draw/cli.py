@@ -142,8 +142,8 @@ def main_3d() -> None:
         help="Wall thickness in mm (default: 1.0)",
     )
     parser.add_argument(
-        "--height", type=float, default=5.0,
-        help="Extrusion height in mm (default: 5.0)",
+        "--height", type=float, default=1.0,
+        help="Extrusion height in mm (default: 1.0)",
     )
     parser.add_argument(
         "--base-thickness", type=float, default=0.0,
