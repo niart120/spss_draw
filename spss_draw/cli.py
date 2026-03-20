@@ -59,7 +59,7 @@ def _add_transform_args(parser: argparse.ArgumentParser) -> None:
 
 def main_2d() -> None:
     """CLI entry point for 2D drawing (matplotlib)."""
-    from spss_draw.draw_2d import PALETTE, draw
+    from spss_draw.draw_2d import PALETTE, draw, draw_dual
 
     parser = argparse.ArgumentParser(
         description="Draw the Duijvestijn order-21 SPSS.",
@@ -92,6 +92,23 @@ def main_2d() -> None:
         "--palette", nargs=4, metavar="COLOR",
         help="4 colors for tile fills (hex or name)",
     )
+    parser.add_argument(
+        "--dual", action="store_true",
+        help="Draw the dual graph (nodes at tile centres, edges for adjacency)",
+    )
+    parser.add_argument(
+        "--no-background", action="store_true",
+        help="(dual mode) Hide the background tiling",
+    )
+    parser.add_argument(
+        "--node-size", type=float, default=6.0,
+        help="(dual mode) Base node marker size in points (default: 6.0)",
+    )
+    parser.add_argument(
+        "--node-amplify", type=float, default=0.0,
+        help="(dual mode) Additional size proportional to tile side; "
+             "0 = uniform nodes (default: 0)",
+    )
     _add_transform_args(parser)
     args = parser.parse_args()
 
@@ -108,9 +125,7 @@ def main_2d() -> None:
     for (x, y, s), ci in sorted(zip(tiles, indices), key=lambda t: t[0][2]):
         print(f"  side={s:3d}  palette[{ci}] = {palette[ci]}")
 
-    draw(
-        size,
-        tiles,
+    common_kw = dict(
         color_indices=indices,
         palette=palette,
         edge_color=normalize_color(args.edge_color),
@@ -120,6 +135,22 @@ def main_2d() -> None:
         output_path=args.output,
         dpi=args.dpi,
     )
+
+    if args.dual:
+        draw_dual(
+            size,
+            tiles,
+            show_background=not args.no_background,
+            node_size=args.node_size,
+            node_amplify=args.node_amplify,
+            **common_kw,
+        )
+    else:
+        draw(
+            size,
+            tiles,
+            **common_kw,
+        )
 
 
 # ── 3D CLI ───────────────────────────────────────────────────────────────
@@ -137,6 +168,8 @@ def main_3d() -> None:
         "--scale", type=float, default=0.5,
         help="mm per tile unit; 0.5 → 56 mm total (default: 0.5)",
     )
+
+    # ── skeleton mode options ────────────────────────────────────────
     parser.add_argument(
         "--wall-thickness", type=float, default=1.0,
         help="Wall thickness in mm (default: 1.0)",
@@ -151,10 +184,39 @@ def main_3d() -> None:
     )
     parser.add_argument(
         "--height-multiplier", type=float, default=0.0,
-        help="Per-tile height scaling: wall_h = height + tile_side * scale * MULT. "
-             "0 = uniform height (default: 0). Try 0.05–1.0 for varying relief.",
+        help="Per-tile height scaling. "
+             "Skeleton: wall_h = height + side*scale*MULT. "
+             "Dual: cube Z-height factor (default: 0).",
     )
+
+    # ── dual mode options ────────────────────────────────────────────
+    parser.add_argument(
+        "--dual", action="store_true",
+        help="Generate a ball-and-stick dual graph instead of a skeleton",
+    )
+    parser.add_argument(
+        "--node-radius", type=float, default=1.0,
+        help="(dual) Node sphere radius in mm (default: 1.0)",
+    )
+    parser.add_argument(
+        "--edge-radius", type=float, default=0.5,
+        help="(dual) Edge cylinder radius in mm (default: 0.5)",
+    )
+
     _add_transform_args(parser)
+
+    # ── STL tessellation options ──────────────────────────────────────
+    parser.add_argument(
+        "--stl-tolerance", type=float, default=0.01,
+        help="STL linear deflection in mm (default: 0.01). "
+             "Lower = finer mesh, higher = fewer polygons.",
+    )
+    parser.add_argument(
+        "--stl-angular-tolerance", type=float, default=5.0,
+        help="STL angular deflection in degrees (default: 5). "
+             "Lower = finer mesh, higher = fewer polygons.",
+    )
+
     args = parser.parse_args()
 
     size, tiles = _prepare_tiles(
@@ -162,30 +224,62 @@ def main_3d() -> None:
     )
     print(f"Tiles: {len(tiles)}, size {size}×{size}")
     print(f"Scale: {args.scale} mm/unit → {size * args.scale:.1f} mm total")
-    print(f"Wall: {args.wall_thickness} mm, Height: {args.height} mm", end="")
-    if args.height_multiplier > 0:
-        from spss_draw.data import DUIJVESTIJN_SIZE
-        max_s = max(s for _, _, s in tiles)
-        min_s = min(s for _, _, s in tiles)
-        h_min = args.height + min_s * args.scale * args.height_multiplier
-        h_max = args.height + max_s * args.scale * args.height_multiplier
-        print(f", height-multiplier: {args.height_multiplier} "
-              f"(range {h_min:.1f}–{h_max:.1f} mm)")
-    elif args.base_thickness > 0:
-        print(f", Base: {args.base_thickness} mm")
+
+    from spss_draw.draw_3d import save_model
+
+    if args.dual:
+        from spss_draw.draw_3d import build_dual
+
+        print(f"Dual mode: node_r={args.node_radius} mm, "
+              f"edge_r={args.edge_radius} mm, "
+              f"height_multiplier={args.height_multiplier}")
+        if args.height_multiplier > 0:
+            max_s = max(s for _, _, s in tiles)
+            min_s = min(s for _, _, s in tiles)
+            z_min = min_s * args.scale * args.height_multiplier / 2
+            z_max = max_s * args.scale * args.height_multiplier / 2
+            print(f"  Node Z range: {z_min:.1f}–{z_max:.1f} mm")
+        else:
+            print("  Flat graph (all nodes at same Z)")
+
+        model = build_dual(
+            size,
+            tiles,
+            scale=args.scale,
+            node_radius=args.node_radius,
+            edge_radius=args.edge_radius,
+            height_multiplier=args.height_multiplier,
+        )
     else:
-        print(" (pure skeleton)")
+        from spss_draw.draw_3d import build_skeleton
 
-    from spss_draw.draw_3d import build_skeleton, save_model
+        print(f"Wall: {args.wall_thickness} mm, Height: {args.height} mm",
+              end="")
+        if args.height_multiplier > 0:
+            max_s = max(s for _, _, s in tiles)
+            min_s = min(s for _, _, s in tiles)
+            h_min = args.height + min_s * args.scale * args.height_multiplier
+            h_max = args.height + max_s * args.scale * args.height_multiplier
+            print(f", height-multiplier: {args.height_multiplier} "
+                  f"(range {h_min:.1f}–{h_max:.1f} mm)")
+        elif args.base_thickness > 0:
+            print(f", Base: {args.base_thickness} mm")
+        else:
+            print(" (pure skeleton)")
 
-    model = build_skeleton(
-        size,
-        tiles,
-        scale=args.scale,
-        wall_thickness=args.wall_thickness,
-        height=args.height,
-        height_multiplier=args.height_multiplier,
-        base_thickness=args.base_thickness,
+        model = build_skeleton(
+            size,
+            tiles,
+            scale=args.scale,
+            wall_thickness=args.wall_thickness,
+            height=args.height,
+            height_multiplier=args.height_multiplier,
+            base_thickness=args.base_thickness,
+        )
+
+    save_model(
+        model, args.output,
+        tolerance=args.stl_tolerance,
+        angular_tolerance=args.stl_angular_tolerance,
     )
-    save_model(model, args.output)
     print(f"Saved to {args.output}")

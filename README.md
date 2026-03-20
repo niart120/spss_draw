@@ -73,6 +73,10 @@ uv run main.py [オプション]
 | `--outer-edge-color COLOR` | `black` | 外枠の色。 |
 | `--outer-edge-width WIDTH` | `2.5` | 外枠の太さ (ポイント)。 |
 | `--palette C1 C2 C3 C4` | 組み込みパレット | タイルの塗り色を 4 色指定する。色名 (`red`)、`#` なし hex (`4E79A7`)、`#` 付き hex (`#4E79A7`) のいずれも可。 |
+| `--dual` | 無効 | 双対グラフモード。各タイルの中心をノード、隣接関係をエッジとして描画する。 |
+| `--no-background` | 無効 | 双対グラフモード時、背景のタイル彩色を非表示にする。 |
+| `--node-size SIZE` | `6.0` | 双対グラフのノードサイズ (pt)。 |
+| `--node-amplify AMP` | `0.0` | タイル辺長に比例してノードを拡大する係数。`0` で均一サイズ。 |
 | `--rotate {0,90,180,270}` | `0` | 時計回りの回転角度。 |
 | `--flip-h` | 無効 | 左右反転。 |
 | `--flip-v` | 無効 | 上下反転。 |
@@ -101,6 +105,15 @@ uv run main.py -o matrix.svg \
 
 # 回転 + 反転
 uv run main.py -o rotated.png --rotate 270 --flip-h
+
+# 双対グラフ (隣接関係の可視化)
+uv run main.py -o dual.png --dual
+
+# 双対グラフ — 背景なし
+uv run main.py -o dual.png --dual --no-background
+
+# 双対グラフ — ノードサイズをタイル辺長に比例させる
+uv run main.py -o dual.png --dual --node-amplify 8
 ```
 
 ---
@@ -134,6 +147,9 @@ uv run main_3d.py [オプション]
 | `--height HEIGHT` | `1.0` | 壁の押し出し高さ (mm)。`--height-multiplier` 使用時は最小高さとなる。 |
 | `--height-multiplier MULT` | `0.0` | 可変高さ係数。各タイルの壁高さ = `height + side × scale × MULT`。`0` で均一高さ。 |
 | `--base-thickness BT` | `0.0` | 底板の厚み (mm)。`0` で底板なし (貫通スケルトン)。 |
+| `--dual` | 無効 | 双対グラフ (Ball-and-Stick) モードで生成。 |
+| `--node-radius R` | `1.0` | (dual) ノード球の半径 (mm)。 |
+| `--edge-radius R` | `0.5` | (dual) エッジ円柱の半径 (mm)。 |
 | `--rotate {0,90,180,270}` | `0` | 時計回りの回転角度。 |
 | `--flip-h` | 無効 | 左右反転。 |
 | `--flip-v` | 無効 | 上下反転。 |
@@ -150,6 +166,21 @@ $$h_{tile} = \texttt{height} + s \times \texttt{scale} \times \texttt{height\tex
 | `0.05` | 控えめなレリーフ |
 | `0.3` | 明確な高低差 |
 | `1.0` | 極端な地形表現 |
+
+### 双対グラフモード (`--dual`)
+
+`--dual` を指定すると、スケルトンの代わりにボール＆スティック型の双対グラフモデルを生成する。
+各タイル中心を球 (ノード)、隣接タイル間を円柱 (エッジ) で接続する。
+
+`--height-multiplier` は dual モード時、各タイルを概念上のキューブと見なした際の Z 方向の伸長係数として機能する:
+
+$$z_{\text{node}} = \frac{s \times \texttt{scale} \times \texttt{height\text{-}multiplier}}{2}$$
+
+| 値 | 効果 |
+|---|---|
+| `0.0` | フラットグラフ (全ノード同一平面) |
+| `1.0` | 各タイルを正立方体と見なす (辺長 = 高さ) |
+| `2.0` | 高低差を強調 |
 
 ### 使用例
 
@@ -174,6 +205,18 @@ uv run main_3d.py -o large.step --scale 1.0 --wall-thickness 1.5 --height 3.0
 
 # 反転 + 回転
 uv run main_3d.py -o rotated.step --flip-v --rotate 90
+
+# 双対グラフ — フラット
+uv run main_3d.py --dual -o dual_flat.step --height-multiplier 0
+
+# 双対グラフ — 正立方体ベース (デフォルト height-multiplier=1)
+uv run main_3d.py --dual -o dual_cube.step --height-multiplier 1.0
+
+# 双対グラフ — 高低差を強調
+uv run main_3d.py --dual -o dual_terrain.step --height-multiplier 2.0
+
+# 双対グラフ — ノード・エッジサイズ変更
+uv run main_3d.py --dual -o dual.stl --node-radius 2.0 --edge-radius 0.8
 ```
 
 ### 出力ファイルについて
