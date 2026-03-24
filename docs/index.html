@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SPSS 3D Model Gallery</title>
+
+  <!-- model-viewer web component -->
+  <script type="module"
+    src="https://ajax.googleapis.com/ajax/libs/model-viewer/4.0.0/model-viewer.min.js">
+  </script>
+
+  <style>
+    :root {
+      --bg: #0d1117;
+      --card: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --accent: #58a6ff;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    header {
+      text-align: center;
+      padding: 2rem 1rem 1rem;
+    }
+
+    header h1 {
+      font-size: 1.6rem;
+      font-weight: 600;
+    }
+
+    header p {
+      margin-top: 0.4rem;
+      font-size: 0.9rem;
+      color: #8b949e;
+    }
+
+    .gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 1.2rem;
+      padding: 1.5rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .card h2 {
+      font-size: 0.95rem;
+      padding: 0.8rem 1rem;
+      border-bottom: 1px solid var(--border);
+      font-weight: 500;
+    }
+
+    model-viewer {
+      width: 100%;
+      height: 340px;
+      --poster-color: transparent;
+    }
+
+    /* AR badge shown by model-viewer on supported devices */
+    model-viewer .ar-badge {
+      position: absolute;
+      bottom: 12px;
+      right: 12px;
+      background: var(--accent);
+      color: #fff;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.8rem;
+    }
+
+    footer {
+      text-align: center;
+      padding: 2rem;
+      font-size: 0.8rem;
+      color: #484f58;
+    }
+
+    footer a { color: var(--accent); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>SPSS 3D Model Gallery</h1>
+  <p>Skeleton &amp; dual-graph models of SPSS (Simple Perfect Squared Square)</p>
+  <p style="margin-top:0.6rem; font-size:0.82rem; color:#58a6ff;">
+    iPhone / iPad では AR ボタンから実寸 AR プレビューできます
+  </p>
+</header>
+
+<div class="gallery" id="gallery"></div>
+
+<footer>
+  Built with
+  <a href="https://modelviewer.dev/" target="_blank" rel="noopener">&lt;model-viewer&gt;</a>
+  ·
+  <a href="https://github.com/niart120/spss_draw" target="_blank" rel="noopener">Source on GitHub</a>
+</footer>
+
+<script>
+  // ---- dynamically load model list from manifest ----
+  const gallery = document.getElementById("gallery");
+
+  fetch("models/models.json")
+    .then(r => r.json())
+    .then(models => {
+      for (const m of models) {
+        const stem = m.file.replace(/^glb\//, "").replace(/\.glb$/, "");
+        const usdzSrc = m.usdz ? `models/${m.usdz}` : `models/usdz/${stem}.usdz`;
+
+        const card = document.createElement("div");
+        card.className = "card";
+
+        card.innerHTML = `
+          <h2>${m.label}</h2>
+          <model-viewer
+            src="models/${m.file}"
+            ios-src="${usdzSrc}"
+            ar
+            ar-modes="scene-viewer webxr quick-look"
+            camera-controls
+            touch-action="pan-y"
+            auto-rotate
+            shadow-intensity="1"
+            environment-image="neutral"
+            alt="${m.label}"
+            loading="lazy"
+          >
+            <button slot="ar-button" style="
+              position: absolute; bottom: 12px; right: 12px;
+              background: #58a6ff; color: #fff; border: none;
+              padding: 6px 14px; border-radius: 8px; font-size: 0.85rem;
+              cursor: pointer;
+            ">
+              🥽 AR で見る
+            </button>
+          </model-viewer>
+        `;
+
+        gallery.appendChild(card);
+      }
+    })
+    .catch(err => {
+      gallery.innerHTML = `<p style="color:#f85149; padding:2rem;">
+        Failed to load model list. Make sure <code>models/models.json</code> exists.
+      </p>`;
+      console.error("Failed to load models.json:", err);
+    });
+</script>
+</script>
+
+</body>
+</html>

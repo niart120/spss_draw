@@ -148,6 +148,7 @@ uv run main_3d.py [オプション]
 | `--height-multiplier MULT` | `0.0` | 可変高さ係数。各タイルの壁高さ = `height + side × scale × MULT`。`0` で均一高さ。 |
 | `--base-thickness BT` | `0.0` | 底板の厚み (mm)。`0` で底板なし (貫通スケルトン)。 |
 | `--dual` | 無効 | 双対グラフ (Ball-and-Stick) モードで生成。 |
+| `--round` | 無効 | 円筒ベースの丸みスケルトンモードで生成 (壁厚 = 高さ)。 |
 | `--node-radius R` | `1.0` | (dual) ノード球の半径 (mm)。 |
 | `--edge-radius R` | `0.5` | (dual) エッジ円柱の半径 (mm)。 |
 | `--rotate {0,90,180,270}` | `0` | 時計回りの回転角度。 |
@@ -167,6 +168,14 @@ $$h_{tile} = \texttt{height} + s \times \texttt{scale} \times \texttt{height\tex
 | `0.3` | 明確な高低差 |
 | `1.0` | 極端な地形表現 |
 
+### 丸みスケルトンモード (`--round`)
+
+`--round` を指定すると、タイル境界の各壁セグメントを水平な円柱で、各接合点（タイル頂点）を球で構築する。  
+壁の断面が半円形になるため、角張ったボックスベースのスケルトンに比べて滑らかなフレームが得られる。
+
+**前提:** 壁の厚さ (`--wall-thickness`) と壁の高さが等しい。  
+半径 = `wall_thickness / 2`。`--height` / `--height-multiplier` / `--base-thickness` は無視される。
+
 ### 双対グラフモード (`--dual`)
 
 `--dual` を指定すると、スケルトンの代わりにボール＆スティック型の双対グラフモデルを生成する。
@@ -185,38 +194,44 @@ $$z_{\text{node}} = \frac{s \times \texttt{scale} \times \texttt{height\text{-}m
 ### 使用例
 
 ```bash
-# 均一高さのスケルトン (STEP) — デフォルト設定そのまま
-uv run main_3d.py -o skeleton.step
+# 均一高さのスケルトン — デフォルト設定そのまま
+uv run main_3d.py -o skeleton.stl
 
 # 底板付き (3D プリント向け STL)
 uv run main_3d.py -o skeleton.stl --wall-thickness 1.2 --height 4.0 \
   --base-thickness 0.8
 
 # 可変高さ — 中程度の高低差
-uv run main_3d.py -o terrain.step --wall-thickness 1.0 --height 1.0 \
+uv run main_3d.py -o terrain.stl --wall-thickness 1.0 --height 1.0 \
   --height-multiplier 0.3
 
 # 可変高さ — 極端な地形
-uv run main_3d.py -o extreme.step --wall-thickness 1.0 --height 0.5 \
+uv run main_3d.py -o extreme.stl --wall-thickness 1.0 --height 0.5 \
   --height-multiplier 1.0
 
 # 大きめサイズ (112 mm)
-uv run main_3d.py -o large.step --scale 1.0 --wall-thickness 1.5 --height 3.0
+uv run main_3d.py -o large.stl --scale 1.0 --wall-thickness 1.5 --height 3.0
 
 # 反転 + 回転
-uv run main_3d.py -o rotated.step --flip-v --rotate 90
+uv run main_3d.py -o rotated.stl --flip-v --rotate 90
 
 # 双対グラフ — フラット
-uv run main_3d.py --dual -o dual_flat.step --height-multiplier 0
+uv run main_3d.py --dual -o dual_flat.stl --height-multiplier 0
 
 # 双対グラフ — 正立方体ベース (デフォルト height-multiplier=1)
-uv run main_3d.py --dual -o dual_cube.step --height-multiplier 1.0
+uv run main_3d.py --dual -o dual_cube.stl --height-multiplier 1.0
 
 # 双対グラフ — 高低差を強調
-uv run main_3d.py --dual -o dual_terrain.step --height-multiplier 2.0
+uv run main_3d.py --dual -o dual_terrain.stl --height-multiplier 2.0
 
 # 双対グラフ — ノード・エッジサイズ変更
 uv run main_3d.py --dual -o dual.stl --node-radius 2.0 --edge-radius 0.8
+
+# 丸みスケルトン — デフォルト (wall_thickness=1.0 → radius=0.5)
+uv run main_3d.py --round -o round.stl
+
+# 丸みスケルトン — 太め + 大きいスケール
+uv run main_3d.py --round --wall-thickness 2.0 --scale 1.0 -o round_large.stl
 ```
 
 ### 出力ファイルについて
@@ -226,6 +241,41 @@ uv run main_3d.py --dual -o dual.stl --node-radius 2.0 --edge-radius 0.8
 
 生成モデルは **Z 軸 = 押し出し方向** (XY 平面にタイルパターン)。スライサーでそのまま読み込めば積層方向が正しい向きとなる。  
 STEP / STL には積層方向のメタ情報は含まれない (スライサー側で配置を決定する)。
+
+---
+
+## Web ギャラリー (GitHub Pages)
+
+`docs/` に `<model-viewer>` ベースの 3D ギャラリーを配置している。  
+ブラウザ上でモデルを回転・ズームして確認でき、iPhone / iPad では AR Quick Look で実寸 AR プレビューも可能。
+
+### GitHub Pages の有効化
+
+1. GitHub リポジトリの **Settings → Pages**
+2. **Source** を `Deploy from a branch` に設定
+3. **Branch** を `main`、フォルダを `/docs` に指定して Save
+
+### モデル更新手順
+
+`model/` に STL を追加・変更したら、以下で GLB / USDZ に再変換:
+
+```bash
+uv run --extra web convert_to_web.py
+```
+
+`usd-core` がインストールできない環境では GLB のみ生成される (USDZ はスキップ)。
+
+新しいモデルを追加した場合もマニフェスト (`models.json`) が自動更新されるため、HTML の編集は不要。
+
+### iPhone AR (USDZ)
+
+`convert_to_web.py` は `usd-core` (Pixar OpenUSD) がインストールされている場合、GLB と同時に USDZ も自動生成する。  
+`<model-viewer>` の `ios-src` から自動参照され、iPhone / iPad で「🥽 AR で見る」ボタンが表示される。
+
+| 依存パッケージ | 用途 |
+|---|---|
+| `trimesh` | STL 読み込み・GLB エクスポート |
+| `usd-core` | USDZ エクスポート (Pixar OpenUSD、Windows / macOS / Linux x86-64) |
 
 ---
 
