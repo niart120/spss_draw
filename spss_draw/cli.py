@@ -189,6 +189,12 @@ def main_3d() -> None:
              "Dual: cube Z-height factor (default: 0).",
     )
 
+    # ── round skeleton mode ──────────────────────────────────────────
+    parser.add_argument(
+        "--round", action="store_true",
+        help="Use cylinder-based rounded skeleton (wall_thickness == height)",
+    )
+
     # ── dual mode options ────────────────────────────────────────────
     parser.add_argument(
         "--dual", action="store_true",
@@ -249,6 +255,19 @@ def main_3d() -> None:
             node_radius=args.node_radius,
             edge_radius=args.edge_radius,
             height_multiplier=args.height_multiplier,
+        )
+    elif getattr(args, "round"):
+        from spss_draw.draw_3d import build_skeleton_round
+
+        wall_radius = args.wall_thickness / 2
+        print(f"Round skeleton: wall_radius={wall_radius:.2f} mm "
+              f"(diameter={args.wall_thickness:.2f} mm)")
+
+        model = build_skeleton_round(
+            size,
+            tiles,
+            scale=args.scale,
+            wall_radius=wall_radius,
         )
     else:
         from spss_draw.draw_3d import build_skeleton

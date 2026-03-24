@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 from spss_draw.coloring import build_adjacency
 
 if TYPE_CHECKING:
-    from build123d import Part
+    from build123d import Compound, Part, Shape
 
 
 def build_skeleton(
@@ -107,8 +107,147 @@ def build_skeleton(
     return part.part
 
 
+# ── Wall-segment enumeration ─────────────────────────────────────────────
+
+def _compute_wall_segments(
+    size: int,
+    tiles: list[tuple[int, int, int]],
+) -> list[tuple[tuple[int, int], tuple[int, int]]]:
+    """Return all wall segments as ``((x1, y1), (x2, y2))`` in tile units.
+
+    Includes both internal edges (shared between adjacent tiles) and
+    outer-boundary edges.
+    """
+    segments: list[tuple[tuple[int, int], tuple[int, int]]] = []
+    n = len(tiles)
+
+    # Internal edges
+    for i in range(n):
+        xi, yi, si = tiles[i]
+        for j in range(i + 1, n):
+            xj, yj, sj = tiles[j]
+            # Shared vertical edge
+            if xi + si == xj:
+                y_lo = max(yi, yj)
+                y_hi = min(yi + si, yj + sj)
+                if y_hi > y_lo:
+                    segments.append(((xi + si, y_lo), (xi + si, y_hi)))
+            elif xj + sj == xi:
+                y_lo = max(yi, yj)
+                y_hi = min(yi + si, yj + sj)
+                if y_hi > y_lo:
+                    segments.append(((xi, y_lo), (xi, y_hi)))
+            # Shared horizontal edge
+            if yi + si == yj:
+                x_lo = max(xi, xj)
+                x_hi = min(xi + si, xj + sj)
+                if x_hi > x_lo:
+                    segments.append(((x_lo, yi + si), (x_hi, yi + si)))
+            elif yj + sj == yi:
+                x_lo = max(xi, xj)
+                x_hi = min(xi + si, xj + sj)
+                if x_hi > x_lo:
+                    segments.append(((x_lo, yi), (x_hi, yi)))
+
+    # Outer boundary edges
+    for x, y, s in tiles:
+        if x == 0:
+            segments.append(((0, y), (0, y + s)))
+        if x + s == size:
+            segments.append(((size, y), (size, y + s)))
+        if y == 0:
+            segments.append(((x, 0), (x + s, 0)))
+        if y + s == size:
+            segments.append(((x, y + s), (x + s, y + s)))
+
+    return segments
+
+
+def build_skeleton_round(
+    size: int,
+    tiles: list[tuple[int, int, int]],
+    *,
+    scale: float = 0.5,
+    wall_radius: float = 0.5,
+) -> "Compound":
+    """Build a rounded skeleton frame using cylinders and spheres.
+
+    Each wall segment becomes a horizontal cylinder, and every junction
+    point (tile corner) gets a sphere.  The radius is shared between
+    wall thickness and height, giving a naturally rounded cross-section.
+
+    Individual shapes are collected into a :class:`Compound` rather than
+    fused via ``BuildPart`` to avoid OCCT boolean-union instability with
+    many disjoint primitives.
+
+    Parameters
+    ----------
+    scale:
+        Millimetres per tile unit.
+    wall_radius:
+        Radius of wall cylinders and junction spheres in mm.
+        The resulting wall thickness (diameter) and height are both
+        ``2 * wall_radius``.
+    """
+    from build123d import (
+        Compound,
+        Cylinder,
+        Location,
+        Pos,
+        Sphere,
+        Vector,
+    )
+
+    S = size * scale
+    half_S = S / 2
+    r = wall_radius
+
+    segments = _compute_wall_segments(size, tiles)
+
+    # Unique junction points (tile corners)
+    corners: set[tuple[int, int]] = set()
+    for x, y, s in tiles:
+        corners.update(((x, y), (x + s, y), (x, y + s), (x + s, y + s)))
+
+    z_axis = Vector(0, 0, 1)
+    shapes = []
+
+    # ── Junction spheres ─────────────────────────────────────────────
+    for cx_t, cy_t in corners:
+        cx = cx_t * scale - half_S
+        cy = cy_t * scale - half_S
+        shapes.append(Pos(cx, cy, r) * Sphere(r))
+
+    # ── Wall cylinders ───────────────────────────────────────────────
+    for (x1_t, y1_t), (x2_t, y2_t) in segments:
+        x1 = x1_t * scale - half_S
+        y1 = y1_t * scale - half_S
+        x2 = x2_t * scale - half_S
+        y2 = y2_t * scale - half_S
+
+        mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+        dx, dy = x2 - x1, y2 - y1
+        length = math.sqrt(dx * dx + dy * dy)
+        if length < 1e-9:
+            continue
+
+        direction = Vector(dx, dy, 0).normalized()
+        dot = z_axis.dot(direction)
+        rot_axis = z_axis.cross(direction)
+        angle = math.degrees(math.acos(max(-1.0, min(1.0, dot))))
+
+        loc = Location((mx, my, r)) * Location(
+            (0, 0, 0),
+            (rot_axis.X, rot_axis.Y, rot_axis.Z),
+            angle,
+        )
+        shapes.append(loc * Cylinder(r, length))
+
+    return Compound(children=shapes)
+
+
 def save_model(
-    model: Part,
+    model: "Shape",
     path: str,
     *,
     tolerance: float = 0.01,
