@@ -11,6 +11,7 @@ dependencies = [
 
 [project.optional-dependencies]
 cad = ["build123d>=0.8"]
+web = ["trimesh>=4.0", "pygltflib", "numpy", "usd-core"]
 
 [project.scripts]
 spss-draw = "spss_draw.cli:main_2d"

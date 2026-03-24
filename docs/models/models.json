@@ -1,0 +1,37 @@
+[
+  {
+    "file": "glb/dual_flat.glb",
+    "label": "Dual graph (flat)",
+    "usdz": "usdz/dual_flat.usdz"
+  },
+  {
+    "file": "glb/dual_s1.2.glb",
+    "label": "Dual graph (s1.2)",
+    "usdz": "usdz/dual_s1.2.usdz"
+  },
+  {
+    "file": "glb/round_large_fixed.glb",
+    "label": "Round skeleton",
+    "usdz": "usdz/round_large_fixed.usdz"
+  },
+  {
+    "file": "glb/spss_s1.2.glb",
+    "label": "Skeleton (s1.2)",
+    "usdz": "usdz/spss_s1.2.usdz"
+  },
+  {
+    "file": "glb/spss_skeleton_flat.glb",
+    "label": "Skeleton (flat)",
+    "usdz": "usdz/spss_skeleton_flat.usdz"
+  },
+  {
+    "file": "glb/spss_skeleton_multi.glb",
+    "label": "Skeleton (multi-height)",
+    "usdz": "usdz/spss_skeleton_multi.usdz"
+  },
+  {
+    "file": "glb/spss_thin.glb",
+    "label": "Skeleton (thin wall)",
+    "usdz": "usdz/spss_thin.usdz"
+  }
+]
