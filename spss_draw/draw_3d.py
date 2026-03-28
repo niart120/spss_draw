@@ -23,6 +23,7 @@ def build_skeleton(
     *,
     scale: float = 0.5,
     wall_thickness: float = 1.0,
+    outer_wall_thickness: float | None = None,
     height: float = 1.0,
     height_multiplier: float = 0.0,
     base_thickness: float = 0.0,
@@ -61,6 +62,9 @@ def build_skeleton(
 
     S = size * scale
     half_S = S / 2
+    owt = outer_wall_thickness if outer_wall_thickness is not None else wall_thickness
+    half_wt = wall_thickness / 2
+    outer_half_wt = owt / 2
 
     def _tile_h(s: int) -> float:
         if height_multiplier > 0:
@@ -72,36 +76,47 @@ def build_skeleton(
 
     with BuildPart() as part:
         # ── Phase 1: Add per-tile solid blocks ───────────────────────
-        # Each block is (s*scale + wt) wide, extending wt/2 beyond the
-        # tile boundary on every side.  For internal edges both tiles
-        # contribute wt/2 each → total wall = wt.  For outer edges the
-        # block extends wt/2 outside the nominal square.
-        # Where two tiles share an edge the taller block governs the
-        # shared-wall height via boolean union.
+        # Each block extends half the wall thickness beyond the tile
+        # boundary on every side.  Boundary sides use outer_half_wt,
+        # internal sides use half_wt.
         for x, y, s in tiles:
             th = _tile_h(s)
-            full = s * scale + wall_thickness
-            cx = (x + s / 2) * scale - half_S
-            cy = (y + s / 2) * scale - half_S
+            lo = outer_half_wt if x == 0 else half_wt
+            ro = outer_half_wt if x + s == size else half_wt
+            bo = outer_half_wt if y == 0 else half_wt
+            to_ = outer_half_wt if y + s == size else half_wt
+            bx1 = x * scale - lo
+            bx2 = (x + s) * scale + ro
+            by1 = y * scale - bo
+            by2 = (y + s) * scale + to_
+            w = bx2 - bx1
+            d = by2 - by1
+            cx = (bx1 + bx2) / 2 - half_S
+            cy = (by1 + by2) / 2 - half_S
             with Locations([(cx, cy, 0)]):
-                Box(full, full, th, align=Z_ALIGN)
+                Box(w, d, th, align=Z_ALIGN)
 
         # ── Phase 2: Hollow tile interiors ───────────────────────────
         for x, y, s in tiles:
             th = _tile_h(s)
-            cut = s * scale - wall_thickness
-            if cut <= 0:
+            lo = outer_half_wt if x == 0 else half_wt
+            ro = outer_half_wt if x + s == size else half_wt
+            bo = outer_half_wt if y == 0 else half_wt
+            to_ = outer_half_wt if y + s == size else half_wt
+            cut_w = s * scale - lo - ro
+            cut_d = s * scale - bo - to_
+            if cut_w <= 0 or cut_d <= 0:
                 continue  # tile too small to hollow
-            cx = (x + s / 2) * scale - half_S
-            cy = (y + s / 2) * scale - half_S
+            cx = (x * scale + lo + (x + s) * scale - ro) / 2 - half_S
+            cy = (y * scale + bo + (y + s) * scale - to_) / 2 - half_S
 
             if 0 < base_thickness < th:
                 with Locations([(cx, cy, base_thickness)]):
-                    Box(cut, cut, th - base_thickness + 0.01,
+                    Box(cut_w, cut_d, th - base_thickness + 0.01,
                         align=Z_ALIGN, mode=Mode.SUBTRACT)
             else:
                 with Locations([(cx, cy, -0.01)]):
-                    Box(cut, cut, th + 0.02,
+                    Box(cut_w, cut_d, th + 0.02,
                         align=Z_ALIGN, mode=Mode.SUBTRACT)
 
     return part.part
@@ -112,13 +127,14 @@ def build_skeleton(
 def _compute_wall_segments(
     size: int,
     tiles: list[tuple[int, int, int]],
-) -> list[tuple[tuple[int, int], tuple[int, int]]]:
-    """Return all wall segments as ``((x1, y1), (x2, y2))`` in tile units.
+) -> tuple:
+    """Return wall segments as ``((x1, y1), (x2, y2))`` in tile units.
 
-    Includes both internal edges (shared between adjacent tiles) and
-    outer-boundary edges.
+    Returns ``(internal_segments, outer_segments)`` where *internal* are
+    shared edges between adjacent tiles and *outer* lie on the boundary.
     """
-    segments: list[tuple[tuple[int, int], tuple[int, int]]] = []
+    internal: list[tuple[tuple[int, int], tuple[int, int]]] = []
+    outer: list[tuple[tuple[int, int], tuple[int, int]]] = []
     n = len(tiles)
 
     # Internal edges
@@ -131,36 +147,36 @@ def _compute_wall_segments(
                 y_lo = max(yi, yj)
                 y_hi = min(yi + si, yj + sj)
                 if y_hi > y_lo:
-                    segments.append(((xi + si, y_lo), (xi + si, y_hi)))
+                    internal.append(((xi + si, y_lo), (xi + si, y_hi)))
             elif xj + sj == xi:
                 y_lo = max(yi, yj)
                 y_hi = min(yi + si, yj + sj)
                 if y_hi > y_lo:
-                    segments.append(((xi, y_lo), (xi, y_hi)))
+                    internal.append(((xi, y_lo), (xi, y_hi)))
             # Shared horizontal edge
             if yi + si == yj:
                 x_lo = max(xi, xj)
                 x_hi = min(xi + si, xj + sj)
                 if x_hi > x_lo:
-                    segments.append(((x_lo, yi + si), (x_hi, yi + si)))
+                    internal.append(((x_lo, yi + si), (x_hi, yi + si)))
             elif yj + sj == yi:
                 x_lo = max(xi, xj)
                 x_hi = min(xi + si, xj + sj)
                 if x_hi > x_lo:
-                    segments.append(((x_lo, yi), (x_hi, yi)))
+                    internal.append(((x_lo, yi), (x_hi, yi)))
 
     # Outer boundary edges
     for x, y, s in tiles:
         if x == 0:
-            segments.append(((0, y), (0, y + s)))
+            outer.append(((0, y), (0, y + s)))
         if x + s == size:
-            segments.append(((size, y), (size, y + s)))
+            outer.append(((size, y), (size, y + s)))
         if y == 0:
-            segments.append(((x, 0), (x + s, 0)))
+            outer.append(((x, 0), (x + s, 0)))
         if y + s == size:
-            segments.append(((x, y + s), (x + s, y + s)))
+            outer.append(((x, y + s), (x + s, y + s)))
 
-    return segments
+    return internal, outer
 
 
 def build_skeleton_round(
@@ -169,6 +185,7 @@ def build_skeleton_round(
     *,
     scale: float = 0.5,
     wall_radius: float = 0.5,
+    outer_wall_radius: float | None = None,
 ) -> "Compound":
     """Build a rounded skeleton frame using cylinders and spheres.
 
@@ -185,9 +202,12 @@ def build_skeleton_round(
     scale:
         Millimetres per tile unit.
     wall_radius:
-        Radius of wall cylinders and junction spheres in mm.
+        Radius of internal wall cylinders and junction spheres in mm.
         The resulting wall thickness (diameter) and height are both
         ``2 * wall_radius``.
+    outer_wall_radius:
+        Radius for outer-boundary wall cylinders and boundary junction
+        spheres.  ``None`` falls back to *wall_radius*.
     """
     from build123d import (
         Compound,
@@ -201,47 +221,350 @@ def build_skeleton_round(
     S = size * scale
     half_S = S / 2
     r = wall_radius
+    r_out = outer_wall_radius if outer_wall_radius is not None else r
 
-    segments = _compute_wall_segments(size, tiles)
+    internal_segs, outer_segs = _compute_wall_segments(size, tiles)
 
     # Unique junction points (tile corners)
     corners: set[tuple[int, int]] = set()
     for x, y, s in tiles:
         corners.update(((x, y), (x + s, y), (x, y + s), (x + s, y + s)))
 
+    # Identify boundary corners for outer radius
+    boundary_corners: set[tuple[int, int]] = set()
+    for cx_t, cy_t in corners:
+        if cx_t == 0 or cx_t == size or cy_t == 0 or cy_t == size:
+            boundary_corners.add((cx_t, cy_t))
+
     z_axis = Vector(0, 0, 1)
     shapes = []
 
     # ── Junction spheres ─────────────────────────────────────────────
     for cx_t, cy_t in corners:
+        cr = r_out if (cx_t, cy_t) in boundary_corners else r
         cx = cx_t * scale - half_S
         cy = cy_t * scale - half_S
-        shapes.append(Pos(cx, cy, r) * Sphere(r))
+        shapes.append(Pos(cx, cy, cr) * Sphere(cr))
 
     # ── Wall cylinders ───────────────────────────────────────────────
-    for (x1_t, y1_t), (x2_t, y2_t) in segments:
-        x1 = x1_t * scale - half_S
-        y1 = y1_t * scale - half_S
-        x2 = x2_t * scale - half_S
-        y2 = y2_t * scale - half_S
+    for segs, seg_r in [(internal_segs, r), (outer_segs, r_out)]:
+        for (x1_t, y1_t), (x2_t, y2_t) in segs:
+            x1 = x1_t * scale - half_S
+            y1 = y1_t * scale - half_S
+            x2 = x2_t * scale - half_S
+            y2 = y2_t * scale - half_S
 
-        mx, my = (x1 + x2) / 2, (y1 + y2) / 2
-        dx, dy = x2 - x1, y2 - y1
-        length = math.sqrt(dx * dx + dy * dy)
-        if length < 1e-9:
-            continue
+            mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+            dx, dy = x2 - x1, y2 - y1
+            length = math.sqrt(dx * dx + dy * dy)
+            if length < 1e-9:
+                continue
 
-        direction = Vector(dx, dy, 0).normalized()
-        dot = z_axis.dot(direction)
-        rot_axis = z_axis.cross(direction)
-        angle = math.degrees(math.acos(max(-1.0, min(1.0, dot))))
+            direction = Vector(dx, dy, 0).normalized()
+            dot = z_axis.dot(direction)
+            rot_axis = z_axis.cross(direction)
+            angle = math.degrees(math.acos(max(-1.0, min(1.0, dot))))
 
-        loc = Location((mx, my, r)) * Location(
-            (0, 0, 0),
-            (rot_axis.X, rot_axis.Y, rot_axis.Z),
-            angle,
-        )
-        shapes.append(loc * Cylinder(r, length))
+            loc = Location((mx, my, seg_r)) * Location(
+                (0, 0, 0),
+                (rot_axis.X, rot_axis.Y, rot_axis.Z),
+                angle,
+            )
+            shapes.append(loc * Cylinder(seg_r, length))
+
+    return Compound(children=shapes)
+
+
+def build_infill_relief(
+    size: int,
+    tiles: list[tuple[int, int, int]],
+    *,
+    scale: float = 0.5,
+    base_thickness: float = 0.6,
+    relief_depth: float = 0.3,
+    groove_width: float = 0.5,
+    fillet_radius: float = 0.0,
+) -> "Part | Compound":
+    """Build a double-sided relief model from SPSS tiles.
+
+    A solid base plate with uniform-height tile blocks protruding from
+    **both** the top and bottom faces.  Tiles are separated by grooves
+    of *groove_width* so the SPSS pattern is visible.
+
+    Parameters
+    ----------
+    size:
+        Side length of the outer SPSS square (in tile units).
+    tiles:
+        List of ``(x, y, side)`` tuples.
+    scale:
+        Millimetres per tile unit.
+    base_thickness:
+        Thickness of the central base plate in mm.
+    relief_depth:
+        Height of each tile block above/below the base surface (mm).
+    groove_width:
+        Width of the groove between adjacent tiles (mm).
+    fillet_radius:
+        Radius for rounding exposed edges of each tile block (mm).
+        ``0`` disables filleting.  Automatically clamped to a safe max.
+    """
+    from build123d import Align, Axis, Box, BuildPart, Compound, Locations, Pos
+
+    S = size * scale
+    half_S = S / 2
+    half_bt = base_thickness / 2
+
+    Z_ALIGN_UP = (Align.CENTER, Align.CENTER, Align.MIN)
+    Z_ALIGN_DOWN = (Align.CENTER, Align.CENTER, Align.MAX)
+
+    if fillet_radius > 0:
+        from build123d import fillet as bd_fillet
+
+        # Clamp fillet radius — compute minimum tile block dimension
+        # accounting for wider margins on boundary edges.
+        gw2 = groove_width / 2
+        min_block = float('inf')
+        for xb, yb, sb in tiles:
+            _ml = groove_width if xb == 0 else gw2
+            _mr = groove_width if xb + sb == size else gw2
+            _mb = groove_width if yb == 0 else gw2
+            _mt = groove_width if yb + sb == size else gw2
+            min_block = min(min_block, sb * scale - _ml - _mr,
+                            sb * scale - _mb - _mt)
+        max_r = min(min_block / 2, relief_depth, groove_width / 2) * 0.95
+        r = min(fillet_radius, max_r)
+        if r < 1e-6:
+            r = 0
+
+        shapes: list = []
+
+        # Base plate (no fillet)
+        shapes.append(Pos(0, 0, 0) * Box(S, S, base_thickness))
+
+        for x, y, s in tiles:
+            ml = groove_width if x == 0 else gw2
+            mr = groove_width if x + s == size else gw2
+            mb = groove_width if y == 0 else gw2
+            mt = groove_width if y + s == size else gw2
+            tw = s * scale - ml - mr
+            th = s * scale - mb - mt
+            if tw <= 0 or th <= 0:
+                continue
+            cx = x * scale - half_S + ml + tw / 2
+            cy = y * scale - half_S + mb + th / 2
+
+            # Top block — fillet the top 4 edges
+            block = Box(tw, th, relief_depth)
+            if r > 0:
+                top_edges = block.edges().sort_by(Axis.Z)[-4:]
+                block = bd_fillet(top_edges, radius=r)
+            shapes.append(
+                Pos(cx, cy, half_bt + relief_depth / 2) * block
+            )
+
+            # Bottom block — fillet the bottom 4 edges
+            block = Box(tw, th, relief_depth)
+            if r > 0:
+                bot_edges = block.edges().sort_by(Axis.Z)[:4]
+                block = bd_fillet(bot_edges, radius=r)
+            shapes.append(
+                Pos(cx, cy, -(half_bt + relief_depth / 2)) * block
+            )
+
+        return Compound(children=shapes)
+
+    # Non-fillet path: proper boolean union via BuildPart
+    gw2 = groove_width / 2
+    with BuildPart() as part:
+        with Locations([(0, 0, -half_bt)]):
+            Box(S, S, base_thickness, align=Z_ALIGN_UP)
+
+        for x, y, s in tiles:
+            ml = groove_width if x == 0 else gw2
+            mr = groove_width if x + s == size else gw2
+            mb = groove_width if y == 0 else gw2
+            mt = groove_width if y + s == size else gw2
+            tw = s * scale - ml - mr
+            th = s * scale - mb - mt
+            if tw <= 0 or th <= 0:
+                continue
+            cx = x * scale - half_S + ml + tw / 2
+            cy = y * scale - half_S + mb + th / 2
+
+            with Locations([(cx, cy, half_bt)]):
+                Box(tw, th, relief_depth, align=Z_ALIGN_UP)
+
+            with Locations([(cx, cy, -half_bt)]):
+                Box(tw, th, relief_depth, align=Z_ALIGN_DOWN)
+
+    return part.part
+
+
+def build_infill_engraved(
+    size: int,
+    tiles: list[tuple[int, int, int]],
+    *,
+    scale: float = 0.5,
+    base_thickness: float = 1.5,
+    carve_depth: float = 0.5,
+    groove_width: float = 0.5,
+    fillet_radius: float = 0.0,
+) -> "Part | Compound":
+    """Build a double-sided engraved model from SPSS tiles.
+
+    A solid slab with each tile's interior carved to a uniform depth from
+    **both** the top and bottom faces, leaving ridges at tile boundaries.
+
+    The carve depth is clamped to 45% of *base_thickness* so the two
+    sides never meet (at most 90% total material removed; 10% remains).
+
+    When *fillet_radius* > 0, horizontal cylinders and spheres are placed
+    along the ridge tops (both faces) to give a smooth rounded profile,
+    similar to the approach used in ``build_skeleton_round``.
+
+    Parameters
+    ----------
+    size:
+        Side length of the outer SPSS square (in tile units).
+    tiles:
+        List of ``(x, y, side)`` tuples.
+    scale:
+        Millimetres per tile unit.
+    base_thickness:
+        Thickness of the slab in mm.
+    carve_depth:
+        Depth to carve from each face (mm).  Clamped to
+        ``0.45 * base_thickness``.
+    groove_width:
+        Width of the ridges left between tiles (mm).
+    fillet_radius:
+        Radius for rounding the ridge tops (mm).  Clamped to
+        ``groove_width / 2``.  ``0`` disables rounding.
+    """
+    from build123d import Align, Box, BuildPart, Locations, Mode
+
+    max_depth = 0.45 * base_thickness
+    if carve_depth > max_depth:
+        carve_depth = max_depth
+
+    S = size * scale
+    half_S = S / 2
+    half_bt = base_thickness / 2
+
+    Z_ALIGN_UP = (Align.CENTER, Align.CENTER, Align.MIN)
+    Z_ALIGN_DOWN = (Align.CENTER, Align.CENTER, Align.MAX)
+
+    # Ridge rounding radius — always match the ridge half-width so
+    # the cylinder/sphere caps sit flush with the ridge surface.
+    r = 0.0
+    if fillet_radius > 0:
+        r = groove_width / 2
+
+    with BuildPart() as part:
+        # ── Solid slab (centred at Z=0) ──────────────────────────────
+        if r > 0:
+            # Rounded-corner slab so outer edges are smooth
+            from build123d import BuildSketch, Plane, RectangleRounded, extrude
+            with BuildSketch(Plane.XY.offset(-half_bt)):
+                RectangleRounded(S, S, radius=r)
+            extrude(amount=base_thickness)
+        else:
+            with Locations([(0, 0, -half_bt)]):
+                Box(S, S, base_thickness, align=Z_ALIGN_UP)
+
+        # ── Carve each tile from both faces (sharp) ─────────────────
+        gw2 = groove_width / 2
+        for x, y, s in tiles:
+            ml = groove_width if x == 0 else gw2
+            mr = groove_width if x + s == size else gw2
+            mb = groove_width if y == 0 else gw2
+            mt = groove_width if y + s == size else gw2
+            tw = s * scale - ml - mr
+            th = s * scale - mb - mt
+            if tw <= 0 or th <= 0:
+                continue
+            cx = x * scale - half_S + ml + tw / 2
+            cy = y * scale - half_S + mb + th / 2
+
+            with Locations([(cx, cy, half_bt - carve_depth)]):
+                Box(tw, th, carve_depth + 0.01,
+                    align=Z_ALIGN_UP, mode=Mode.SUBTRACT)
+
+            with Locations([(cx, cy, -half_bt + carve_depth)]):
+                Box(tw, th, carve_depth + 0.01,
+                    align=Z_ALIGN_DOWN, mode=Mode.SUBTRACT)
+
+    carved = part.part
+
+    if r <= 0:
+        return carved
+
+    # ── Add rounded ridge caps using cylinders and spheres ───────────
+    # This places geometry ON TOP of the ridges (at both slab surfaces)
+    # to smooth the sharp 90° edges into a rounded profile.
+    from build123d import (
+        Compound,
+        Cylinder,
+        Location,
+        Pos,
+        Sphere,
+        Vector,
+    )
+
+    internal_segs, outer_segs = _compute_wall_segments(size, tiles)
+
+    # Collect all corner points
+    corners: set[tuple[int, int]] = set()
+    for x, y, s in tiles:
+        corners.update(((x, y), (x + s, y), (x, y + s), (x + s, y + s)))
+
+    z_axis = Vector(0, 0, 1)
+    shapes: list = [carved]
+
+    # Helper: tile-unit coord → mm.  Boundary coords (0 or size) are
+    # shifted inward by groove_width/2 so caps sit on the outer ridge
+    # centre rather than at the slab edge.
+    gw2 = groove_width / 2
+
+    def _to_mm(v: int) -> float:
+        mm = v * scale - half_S
+        if v == 0:
+            return mm + gw2
+        if v == size:
+            return mm - gw2
+        return mm
+
+    for face_z in [half_bt, -half_bt]:
+        # ── Junction spheres on ALL ridge intersections ──────────────
+        for cx_t, cy_t in corners:
+            shapes.append(
+                Pos(_to_mm(cx_t), _to_mm(cy_t), face_z) * Sphere(r)
+            )
+
+        # ── Cylinders along ALL ridges (internal + outer) ────────────
+        for segs in [internal_segs, outer_segs]:
+            for (x1_t, y1_t), (x2_t, y2_t) in segs:
+                x1, y1 = _to_mm(x1_t), _to_mm(y1_t)
+                x2, y2 = _to_mm(x2_t), _to_mm(y2_t)
+
+                mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+                dx, dy = x2 - x1, y2 - y1
+                length = math.sqrt(dx * dx + dy * dy)
+                if length < 1e-9:
+                    continue
+
+                direction = Vector(dx, dy, 0).normalized()
+                dot = z_axis.dot(direction)
+                rot_axis = z_axis.cross(direction)
+                angle = math.degrees(math.acos(max(-1.0, min(1.0, dot))))
+
+                loc = Location((mx, my, face_z)) * Location(
+                    (0, 0, 0),
+                    (rot_axis.X, rot_axis.Y, rot_axis.Z),
+                    angle,
+                )
+                shapes.append(loc * Cylinder(r, length))
 
     return Compound(children=shapes)
 

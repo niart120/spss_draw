@@ -175,6 +175,11 @@ def main_3d() -> None:
         help="Wall thickness in mm (default: 1.0)",
     )
     parser.add_argument(
+        "--outer-wall-thickness", type=float, default=None,
+        help="Outer boundary wall thickness in mm; "
+             "defaults to --wall-thickness if omitted",
+    )
+    parser.add_argument(
         "--height", type=float, default=1.0,
         help="Extrusion height in mm (default: 1.0)",
     )
@@ -209,6 +214,33 @@ def main_3d() -> None:
         help="(dual) Edge cylinder radius in mm (default: 0.5)",
     )
 
+    # ── infill mode options ──────────────────────────────────────────
+    parser.add_argument(
+        "--infill", choices=["relief", "engraved"], default=None,
+        help="Infill mode: 'relief' (raised tiles on both faces) or "
+             "'engraved' (carved tiles on both faces). "
+             "Mutually exclusive with --round / --dual.",
+    )
+    parser.add_argument(
+        "--relief-depth", type=float, default=0.3,
+        help="(infill relief) Relief height per face in mm (default: 0.3)",
+    )
+    parser.add_argument(
+        "--carve-depth", type=float, default=0.5,
+        help="(infill engraved) Carve depth per face in mm; "
+             "clamped to 45%% of base-thickness (default: 0.5)",
+    )
+    parser.add_argument(
+        "--groove-width", type=float, default=None,
+        help="(infill) Groove / ridge width between tiles in mm "
+             "(default: 0.3 for relief, 0.5 for engraved)",
+    )
+    parser.add_argument(
+        "--fillet-radius", type=float, default=0.0,
+        help="(infill) Fillet radius for rounding edges in mm; "
+             "0 = sharp edges. Auto-clamped to safe max (default: 0)",
+    )
+
     _add_transform_args(parser)
 
     # ── STL tessellation options ──────────────────────────────────────
@@ -225,6 +257,19 @@ def main_3d() -> None:
 
     args = parser.parse_args()
 
+    # ── mutual exclusion check ───────────────────────────────────────
+    mode_flags = []
+    if args.dual:
+        mode_flags.append("--dual")
+    if getattr(args, "round"):
+        mode_flags.append("--round")
+    if args.infill:
+        mode_flags.append(f"--infill {args.infill}")
+    if len(mode_flags) > 1:
+        parser.error(
+            f"Mutually exclusive options used together: {', '.join(mode_flags)}"
+        )
+
     size, tiles = _prepare_tiles(
         rotate=args.rotate, flip_h=args.flip_h, flip_v=args.flip_v,
     )
@@ -233,7 +278,56 @@ def main_3d() -> None:
 
     from spss_draw.draw_3d import save_model
 
-    if args.dual:
+    if args.infill == "relief":
+        from spss_draw.draw_3d import build_infill_relief
+
+        bt = args.base_thickness if args.base_thickness > 0 else 0.6
+        gw = args.groove_width if args.groove_width is not None else 0.3
+        fr = args.fillet_radius
+        print(f"Infill relief: base={bt} mm, "
+              f"relief_depth={args.relief_depth} mm, "
+              f"groove={gw} mm"
+              f"{f', fillet={fr} mm' if fr > 0 else ''}")
+
+        model = build_infill_relief(
+            size,
+            tiles,
+            scale=args.scale,
+            base_thickness=bt,
+            relief_depth=args.relief_depth,
+            groove_width=gw,
+            fillet_radius=fr,
+        )
+    elif args.infill == "engraved":
+        from spss_draw.draw_3d import build_infill_engraved
+
+        bt = args.base_thickness if args.base_thickness > 0 else 1.5
+        gw = args.groove_width if args.groove_width is not None else 0.5
+        max_depth = 0.45 * bt
+        effective_depth = args.carve_depth
+        if effective_depth > max_depth:
+            print(f"WARNING: --carve-depth {effective_depth} mm exceeds 45% "
+                  f"of base-thickness ({max_depth:.2f} mm). "
+                  f"Clamped to {max_depth:.2f} mm.",
+                  file=sys.stderr)
+            effective_depth = max_depth
+
+        fr = args.fillet_radius
+        print(f"Infill engraved: base={bt} mm, "
+              f"carve_depth={effective_depth:.2f} mm, "
+              f"groove={gw} mm"
+              f"{f', fillet={fr} mm' if fr > 0 else ''}")
+
+        model = build_infill_engraved(
+            size,
+            tiles,
+            scale=args.scale,
+            base_thickness=bt,
+            carve_depth=effective_depth,
+            groove_width=gw,
+            fillet_radius=fr,
+        )
+    elif args.dual:
         from spss_draw.draw_3d import build_dual
 
         print(f"Dual mode: node_r={args.node_radius} mm, "
@@ -260,14 +354,20 @@ def main_3d() -> None:
         from spss_draw.draw_3d import build_skeleton_round
 
         wall_radius = args.wall_thickness / 2
+        owt = args.outer_wall_thickness
+        outer_wall_radius = owt / 2 if owt is not None else None
         print(f"Round skeleton: wall_radius={wall_radius:.2f} mm "
               f"(diameter={args.wall_thickness:.2f} mm)")
+        if owt is not None:
+            print(f"  Outer wall: radius={outer_wall_radius:.2f} mm "
+                  f"(diameter={owt:.2f} mm)")
 
         model = build_skeleton_round(
             size,
             tiles,
             scale=args.scale,
             wall_radius=wall_radius,
+            outer_wall_radius=outer_wall_radius,
         )
     else:
         from spss_draw.draw_3d import build_skeleton
@@ -291,6 +391,7 @@ def main_3d() -> None:
             tiles,
             scale=args.scale,
             wall_thickness=args.wall_thickness,
+            outer_wall_thickness=args.outer_wall_thickness,
             height=args.height,
             height_multiplier=args.height_multiplier,
             base_thickness=args.base_thickness,
