@@ -339,8 +339,13 @@ def build_infill_relief(
 
         shapes: list = []
 
-        # Base plate (no fillet)
-        shapes.append(Pos(0, 0, 0) * Box(S, S, base_thickness))
+        # Base plate (rounded corners when fillet enabled)
+        from build123d import BuildPart as _BP, BuildSketch, Plane, RectangleRounded, extrude
+        with _BP() as _base:
+            with BuildSketch(Plane.XY.offset(-half_bt)):
+                RectangleRounded(S, S, radius=r)
+            extrude(amount=base_thickness)
+        shapes.append(_base.part)
 
         for x, y, s in tiles:
             ml = groove_width if x == 0 else gw2
@@ -406,8 +411,8 @@ def build_infill_engraved(
     tiles: list[tuple[int, int, int]],
     *,
     scale: float = 0.5,
-    base_thickness: float = 1.5,
-    carve_depth: float = 0.5,
+    base_thickness: float = 1.0,
+    carve_depth: float = 0.3,
     groove_width: float = 0.5,
     fillet_radius: float = 0.0,
 ) -> "Part | Compound":

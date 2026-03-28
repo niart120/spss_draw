@@ -226,9 +226,9 @@ def main_3d() -> None:
         help="(infill relief) Relief height per face in mm (default: 0.3)",
     )
     parser.add_argument(
-        "--carve-depth", type=float, default=0.5,
+        "--carve-depth", type=float, default=0.3,
         help="(infill engraved) Carve depth per face in mm; "
-             "clamped to 45%% of base-thickness (default: 0.5)",
+             "clamped to 45%% of base-thickness (default: 0.3)",
     )
     parser.add_argument(
         "--groove-width", type=float, default=None,
@@ -301,7 +301,7 @@ def main_3d() -> None:
     elif args.infill == "engraved":
         from spss_draw.draw_3d import build_infill_engraved
 
-        bt = args.base_thickness if args.base_thickness > 0 else 1.5
+        bt = args.base_thickness if args.base_thickness > 0 else 1.0
         gw = args.groove_width if args.groove_width is not None else 0.5
         max_depth = 0.45 * bt
         effective_depth = args.carve_depth
