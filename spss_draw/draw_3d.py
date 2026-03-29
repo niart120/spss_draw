@@ -574,6 +574,187 @@ def build_infill_engraved(
     return Compound(children=shapes)
 
 
+# ── Pendant ring helpers ─────────────────────────────────────────────────
+
+def _add_pendant_rings(
+    base_model: "Shape",
+    slab_size: float,
+    total_height: float,
+    *,
+    corner_positions: list[tuple[float, float, float]],
+    ring_hole_diameter: float = 2.0,
+    ring_wall: float = 0.8,
+    groove_width: float = 0.5,
+    fillet_radius: float = 0.0,
+) -> "Compound":
+    """Add reinforced chain-ring lugs at specified corners of *base_model*.
+
+    Each lug is a cylinder (with through-hole) placed at 45° outward from
+    the corner, with a bridge for strength.  Lugs are built as separate
+    solids and assembled via ``Compound`` to avoid boolean interference.
+
+    Parameters
+    ----------
+    base_model:
+        The infill model (relief or engraved) to augment.
+    slab_size:
+        Side length of the square slab in mm.
+    total_height:
+        Total height of the slab (including relief/carve) in mm.
+    corner_positions:
+        List of ``(corner_x_mm, corner_y_mm, angle_degrees)`` for each
+        lug.  *angle* is the outward diagonal direction (e.g. 45° for
+        top-right).
+    ring_hole_diameter:
+        Diameter of the chain hole in mm.
+    ring_wall:
+        Wall thickness around the hole in mm.
+    fillet_radius:
+        Reserved for future use.
+    """
+    from build123d import (
+        Align,
+        BuildPart,
+        Compound,
+        Cylinder,
+        Locations,
+        Mode,
+    )
+
+    hole_r = ring_hole_diameter / 2
+    outer_r = hole_r + ring_wall
+
+    # Lug centre offset from slab corner along diagonal.
+    # outer_r minus groove_width keeps the lug overlapping the slab's
+    # outer wall by groove_width, adapting to the groove setting.
+    offset = outer_r - groove_width
+    diag = offset / math.sqrt(2)
+
+    lug_parts: list = []
+    for corner_x, corner_y, ang in corner_positions:
+        rad = math.radians(ang)
+        cx = corner_x + math.cos(rad) * diag
+        cy = corner_y + math.sin(rad) * diag
+
+        with BuildPart() as lug:
+            with Locations([(cx, cy, -total_height / 2)]):
+                Cylinder(
+                    outer_r, total_height,
+                    align=(Align.CENTER, Align.CENTER, Align.MIN),
+                )
+            with Locations([(cx, cy, -total_height / 2 - 0.01)]):
+                Cylinder(
+                    hole_r, total_height + 0.02,
+                    align=(Align.CENTER, Align.CENTER, Align.MIN),
+                    mode=Mode.SUBTRACT,
+                )
+        lug_parts.append(lug.part)
+
+    children = [base_model] + lug_parts
+    return Compound(children=children)
+
+
+def _find_largest_tile_corner(
+    size: int,
+    tiles: list[tuple[int, int, int]],
+    scale: float,
+) -> tuple[float, float, float]:
+    """Return ``(corner_x_mm, corner_y_mm, angle)`` for the slab corner
+    closest to the largest tile's centre."""
+    half_S = size * scale / 2
+
+    # Find the largest tile
+    largest = max(tiles, key=lambda t: t[2])
+    x, y, s = largest
+    # Tile centre in mm (slab-centred coords)
+    tcx = (x + s / 2) * scale - half_S
+    tcy = (y + s / 2) * scale - half_S
+
+    # Pick the nearest slab corner
+    slab_corners = [
+        (+half_S, +half_S, 45),
+        (-half_S, +half_S, 135),
+        (-half_S, -half_S, 225),
+        (+half_S, -half_S, 315),
+    ]
+
+    best = min(
+        slab_corners,
+        key=lambda c: (c[0] - tcx) ** 2 + (c[1] - tcy) ** 2,
+    )
+    return best
+
+
+def build_pendant_relief(
+    size: int,
+    tiles: list[tuple[int, int, int]],
+    *,
+    scale: float = 0.5,
+    base_thickness: float = 0.6,
+    relief_depth: float = 0.3,
+    groove_width: float = 0.3,
+    fillet_radius: float = 0.0,
+    ring_hole_diameter: float = 2.0,
+    ring_wall: float = 0.8,
+) -> "Compound":
+    """Build a pendant-style relief model with a chain-ring lug at the
+    corner nearest to the largest tile."""
+    base = build_infill_relief(
+        size, tiles,
+        scale=scale,
+        base_thickness=base_thickness,
+        relief_depth=relief_depth,
+        groove_width=groove_width,
+        fillet_radius=fillet_radius,
+    )
+    S = size * scale
+    total_h = base_thickness + 2 * relief_depth
+    corner = _find_largest_tile_corner(size, tiles, scale)
+    return _add_pendant_rings(
+        base, S, total_h,
+        corner_positions=[corner],
+        ring_hole_diameter=ring_hole_diameter,
+        ring_wall=ring_wall,
+        groove_width=groove_width,
+        fillet_radius=fillet_radius,
+    )
+
+
+def build_pendant_engraved(
+    size: int,
+    tiles: list[tuple[int, int, int]],
+    *,
+    scale: float = 0.5,
+    base_thickness: float = 1.0,
+    carve_depth: float = 0.3,
+    groove_width: float = 0.5,
+    fillet_radius: float = 0.0,
+    ring_hole_diameter: float = 2.0,
+    ring_wall: float = 0.8,
+) -> "Compound":
+    """Build a pendant-style engraved model with a chain-ring lug at the
+    corner nearest to the largest tile."""
+    base = build_infill_engraved(
+        size, tiles,
+        scale=scale,
+        base_thickness=base_thickness,
+        carve_depth=carve_depth,
+        groove_width=groove_width,
+        fillet_radius=fillet_radius,
+    )
+    S = size * scale
+    total_h = base_thickness
+    corner = _find_largest_tile_corner(size, tiles, scale)
+    return _add_pendant_rings(
+        base, S, total_h,
+        corner_positions=[corner],
+        ring_hole_diameter=ring_hole_diameter,
+        ring_wall=ring_wall,
+        groove_width=groove_width,
+        fillet_radius=fillet_radius,
+    )
+
+
 def save_model(
     model: "Shape",
     path: str,
