@@ -241,6 +241,21 @@ def main_3d() -> None:
              "0 = sharp edges. Auto-clamped to safe max (default: 0)",
     )
 
+    # ── pendant mode options ─────────────────────────────────────────
+    parser.add_argument(
+        "--pendant", action="store_true", default=False,
+        help="Add chain-ring through-holes at 4 corners (pendant mode). "
+             "Requires --infill.",
+    )
+    parser.add_argument(
+        "--ring-hole-diameter", type=float, default=1.8,
+        help="(pendant) Diameter of the chain hole in mm (default: 1.8)",
+    )
+    parser.add_argument(
+        "--ring-wall", type=float, default=0.8,
+        help="(pendant) Wall thickness around the ring hole in mm (default: 0.8)",
+    )
+
     _add_transform_args(parser)
 
     # ── STL tessellation options ──────────────────────────────────────
@@ -269,6 +284,8 @@ def main_3d() -> None:
         parser.error(
             f"Mutually exclusive options used together: {', '.join(mode_flags)}"
         )
+    if args.pendant and not args.infill:
+        parser.error("--pendant requires --infill {relief,engraved}")
 
     size, tiles = _prepare_tiles(
         rotate=args.rotate, flip_h=args.flip_h, flip_v=args.flip_v,
@@ -279,29 +296,52 @@ def main_3d() -> None:
     from spss_draw.draw_3d import save_model
 
     if args.infill == "relief":
-        from spss_draw.draw_3d import build_infill_relief
-
-        bt = args.base_thickness if args.base_thickness > 0 else 0.6
+        if args.base_thickness > 0:
+            bt = args.base_thickness
+        elif args.pendant:
+            bt = 2.0
+        else:
+            bt = 0.6
         gw = args.groove_width if args.groove_width is not None else 0.3
         fr = args.fillet_radius
-        print(f"Infill relief: base={bt} mm, "
+        pendant_str = " [pendant]" if args.pendant else ""
+        print(f"Infill relief{pendant_str}: base={bt} mm, "
               f"relief_depth={args.relief_depth} mm, "
               f"groove={gw} mm"
               f"{f', fillet={fr} mm' if fr > 0 else ''}")
+        if args.pendant:
+            print(f"  Ring: hole={args.ring_hole_diameter} mm, "
+                  f"wall={args.ring_wall} mm")
 
-        model = build_infill_relief(
-            size,
-            tiles,
-            scale=args.scale,
-            base_thickness=bt,
-            relief_depth=args.relief_depth,
-            groove_width=gw,
-            fillet_radius=fr,
-        )
+        if args.pendant:
+            from spss_draw.draw_3d import build_pendant_relief
+            model = build_pendant_relief(
+                size, tiles,
+                scale=args.scale,
+                base_thickness=bt,
+                relief_depth=args.relief_depth,
+                groove_width=gw,
+                fillet_radius=fr,
+                ring_hole_diameter=args.ring_hole_diameter,
+                ring_wall=args.ring_wall,
+            )
+        else:
+            from spss_draw.draw_3d import build_infill_relief
+            model = build_infill_relief(
+                size, tiles,
+                scale=args.scale,
+                base_thickness=bt,
+                relief_depth=args.relief_depth,
+                groove_width=gw,
+                fillet_radius=fr,
+            )
     elif args.infill == "engraved":
-        from spss_draw.draw_3d import build_infill_engraved
-
-        bt = args.base_thickness if args.base_thickness > 0 else 1.0
+        if args.base_thickness > 0:
+            bt = args.base_thickness
+        elif args.pendant:
+            bt = 2.0
+        else:
+            bt = 1.0
         gw = args.groove_width if args.groove_width is not None else 0.5
         max_depth = 0.45 * bt
         effective_depth = args.carve_depth
@@ -313,20 +353,37 @@ def main_3d() -> None:
             effective_depth = max_depth
 
         fr = args.fillet_radius
-        print(f"Infill engraved: base={bt} mm, "
+        pendant_str = " [pendant]" if args.pendant else ""
+        print(f"Infill engraved{pendant_str}: base={bt} mm, "
               f"carve_depth={effective_depth:.2f} mm, "
               f"groove={gw} mm"
               f"{f', fillet={fr} mm' if fr > 0 else ''}")
+        if args.pendant:
+            print(f"  Ring: hole={args.ring_hole_diameter} mm, "
+                  f"wall={args.ring_wall} mm")
 
-        model = build_infill_engraved(
-            size,
-            tiles,
-            scale=args.scale,
-            base_thickness=bt,
-            carve_depth=effective_depth,
-            groove_width=gw,
-            fillet_radius=fr,
-        )
+        if args.pendant:
+            from spss_draw.draw_3d import build_pendant_engraved
+            model = build_pendant_engraved(
+                size, tiles,
+                scale=args.scale,
+                base_thickness=bt,
+                carve_depth=effective_depth,
+                groove_width=gw,
+                fillet_radius=fr,
+                ring_hole_diameter=args.ring_hole_diameter,
+                ring_wall=args.ring_wall,
+            )
+        else:
+            from spss_draw.draw_3d import build_infill_engraved
+            model = build_infill_engraved(
+                size, tiles,
+                scale=args.scale,
+                base_thickness=bt,
+                carve_depth=effective_depth,
+                groove_width=gw,
+                fillet_radius=fr,
+            )
     elif args.dual:
         from spss_draw.draw_3d import build_dual
 

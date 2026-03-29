@@ -144,6 +144,7 @@ uv run main_3d.py [オプション]
 | `-o FILE`, `--output FILE` | `spss_skeleton.step` | 出力パス。`.step` / `.stp` で STEP 形式、`.stl` で STL 形式。 |
 | `--scale SCALE` | `0.5` | mm/タイル単位。`0.5` → 全体 56 mm。`1.0` → 112 mm。 |
 | `--wall-thickness WT` | `1.0` | 壁の厚み (mm)。 |
+| `--outer-wall-thickness OWT` | `--wall-thickness` と同値 | 外周壁の厚み (mm)。省略時は `--wall-thickness` と同じ。 |
 | `--height HEIGHT` | `1.0` | 壁の押し出し高さ (mm)。`--height-multiplier` 使用時は最小高さとなる。 |
 | `--height-multiplier MULT` | `0.0` | 可変高さ係数。各タイルの壁高さ = `height + side × scale × MULT`。`0` で均一高さ。 |
 | `--base-thickness BT` | `0.0` | 底板の厚み (mm)。`0` で底板なし (貫通スケルトン)。 |
@@ -175,6 +176,9 @@ $$h_{tile} = \texttt{height} + s \times \texttt{scale} \times \texttt{height\tex
 
 **前提:** 壁の厚さ (`--wall-thickness`) と壁の高さが等しい。  
 半径 = `wall_thickness / 2`。`--height` / `--height-multiplier` / `--base-thickness` は無視される。
+
+`--outer-wall-thickness` を併用すると、外周壁のみ太さを変更できる。  
+外周壁の半径 = `outer_wall_thickness / 2`、内壁の半径 = `wall_thickness / 2`。
 
 ### 双対グラフモード (`--dual`)
 
@@ -232,6 +236,9 @@ uv run main_3d.py --round -o round.stl
 
 # 丸みスケルトン — 太め + 大きいスケール
 uv run main_3d.py --round --wall-thickness 2.0 --scale 1.0 -o round_large.stl
+
+# 丸みスケルトン — 外周壁のみ太く
+uv run main_3d.py --round --wall-thickness 1.2 --outer-wall-thickness 1.5 --scale 0.7 -o round_outer.stl
 ```
 
 ### 出力ファイルについて
