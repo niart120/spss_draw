@@ -636,12 +636,13 @@ def _add_pendant_bail(
         cx = corner_x + math.cos(rad) * diag
         cy = corner_y + math.sin(rad) * diag
 
-        # Cylinder axis = diagonal direction (horizontal).
-        # Pitch 90° tilts the default Z-axis into XY,
-        # yaw `ang` aligns it with the outward diagonal.
-        rot_body = Rotation(90, 45, ang)
-        # Hole axis = perpendicular to diagonal, still horizontal.
-        rot_hole = Rotation(90, 45, ang + 90)
+        # Rotation(90, Y, 0) maps the Z-axis to direction (Y+90)° in
+        # the horizontal plane.  Both body and hole share the same axis
+        # (coaxial) — the subtraction of the smaller hole cylinder from
+        # the larger body cylinder produces a tube (ring) through which
+        # the chain passes.
+        rot_body = Rotation(90, ang, 0)
+        rot_hole = rot_body
 
         with BuildPart() as lug:
             with Locations([(cx, cy, 0)]):
@@ -655,6 +656,24 @@ def _add_pendant_bail(
         lug_parts.append(lug.part)
 
     return Compound(children=[base_model] + lug_parts)
+
+
+def _all_slab_corners(
+    size: int,
+    scale: float,
+) -> list[tuple[float, float, float]]:
+    """Return all 4 slab corners as ``(x_mm, y_mm, angle_degrees)``.
+
+    Angles are the outward diagonal direction for each corner, spaced
+    90° apart so bail hole axes are consistently oriented.
+    """
+    half_S = size * scale / 2
+    return [
+        (+half_S, +half_S, 45),
+        (-half_S, +half_S, 135),
+        (-half_S, -half_S, 225),
+        (+half_S, -half_S, 315),
+    ]
 
 
 def _find_largest_tile_corner(
@@ -698,8 +717,10 @@ def build_pendant_relief(
     ring_hole_diameter: float = 1.8,
     ring_wall: float = 0.8,
 ) -> "Compound":
-    """Build a pendant-style relief model with a bail at the corner
-    nearest to the largest tile."""
+    """Build a pendant-style relief model with bails at all 4 corners.
+
+    Each bail is rotated 90\u00b0 in yaw so the chain-hole axes are
+    consistently oriented."""
     base = build_infill_relief(
         size, tiles,
         scale=scale,
@@ -710,10 +731,10 @@ def build_pendant_relief(
     )
     S = size * scale
     total_h = base_thickness + 2 * relief_depth
-    corner = _find_largest_tile_corner(size, tiles, scale)
+    corners = _all_slab_corners(size, scale)
     return _add_pendant_bail(
         base, S, total_h,
-        corner_positions=[corner],
+        corner_positions=corners,
         ring_hole_diameter=ring_hole_diameter,
         ring_wall=ring_wall,
         groove_width=groove_width,
@@ -733,8 +754,10 @@ def build_pendant_engraved(
     ring_hole_diameter: float = 1.8,
     ring_wall: float = 0.8,
 ) -> "Compound":
-    """Build a pendant-style engraved model with a bail at the corner
-    nearest to the largest tile."""
+    """Build a pendant-style engraved model with bails at all 4 corners.
+
+    Each bail is rotated 90\u00b0 in yaw so the chain-hole axes are
+    consistently oriented."""
     base = build_infill_engraved(
         size, tiles,
         scale=scale,
@@ -745,10 +768,10 @@ def build_pendant_engraved(
     )
     S = size * scale
     total_h = base_thickness
-    corner = _find_largest_tile_corner(size, tiles, scale)
+    corners = _all_slab_corners(size, scale)
     return _add_pendant_bail(
         base, S, total_h,
-        corner_positions=[corner],
+        corner_positions=corners,
         ring_hole_diameter=ring_hole_diameter,
         ring_wall=ring_wall,
         groove_width=groove_width,
