@@ -646,7 +646,7 @@ def _add_pendant_bail(
 
         with BuildPart() as lug:
             with Locations([(cx, cy, 0)]):
-                Cylinder(outer_r, total_height, rotation=rot_body)
+                Cylinder(outer_r, ring_wall, rotation=rot_body)
             with Locations([(cx, cy, 0)]):
                 Cylinder(
                     hole_r, outer_r * 3,
